@@ -4,12 +4,23 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include <cassert>
+#include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
 
 constexpr std::string_view HTTPS_PORT = "443";
+
+std::ostream* keylog_stream = nullptr;
+
+void keylog_callback(const SSL* ssl, const char* line) {
+  if (keylog_stream) {
+    (*keylog_stream) << line << std::endl;
+  }
+}
 
 int main(int argc, char** argv) {
   cxxopts::Options options("tls_client", "TLS client as part of YSDA practice assignment");
@@ -18,6 +29,8 @@ int main(int argc, char** argv) {
     ("resource", "Resource to be requested", cxxopts::value<std::string>())
     ("v,tls-version", "TLS protocol version, available values: 1.2, 1.3", cxxopts::value<std::string>()->default_value("1.2"))
     ("c,ciphers", "Supported ciphersuites", cxxopts::value<std::vector<std::string>>())
+    ("key-stdout", "Print keys to standard output", cxxopts::value<bool>()->default_value("false"))
+    ("k,keylog", "Filename to print keylog to", cxxopts::value<std::string>())
     ("h,help", "Print usage")
     ;
 
@@ -34,6 +47,18 @@ int main(int argc, char** argv) {
   const auto hostname = args["host"].as<std::string>();
   const auto ciphers_args = args["ciphers"].as<std::vector<std::string>>();
   const auto resource = args["resource"].as<std::string>();
+  std::string keylog_filename;
+  if (args.count("keylog")) {
+    keylog_filename = args["keylog"].as<std::string>();
+  }
+  std::shared_ptr<std::ofstream> keylog_stream_ptr;
+
+  if (args["key-stdout"].as<bool>()) {
+    keylog_stream = &std::cout;
+  } else if (!keylog_filename.empty()) {
+    keylog_stream_ptr = std::make_shared<std::ofstream>(keylog_filename, std::ios_base::out | std::ios_base::trunc);
+    keylog_stream = keylog_stream_ptr.get();
+  }
 
   const SSL_METHOD* method = TLS_client_method();
   if (!method) {
@@ -65,10 +90,8 @@ int main(int argc, char** argv) {
   SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
   const long flags = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
   SSL_CTX_set_options(ctx, flags);
-  // if (SSL_CTX_load_verify_file(ctx, "/private/etc/ssl/cert.pem") != 1) {
-  //   std::cerr << "Failed to set verify paths" << std::endl;
-  //   exit(1);
-  // }
+  SSL_CTX_set_keylog_callback(ctx, &keylog_callback);
+
   if (SSL_CTX_set_default_verify_paths(ctx) != 1) {
     std::cerr << "Failed to set verify paths" << std::endl;
     exit(1);
@@ -143,6 +166,21 @@ int main(int argc, char** argv) {
     std::cerr << "Failed to verify certificates chain" << std::endl;
     goto finish;
   }
+
+  // {
+  //   const SSL_SESSION* session = SSL_get_session(ssl);
+  //   if (!session) {
+  //     std::cerr << "Failed to retrieve ssl session" << std::endl;
+  //     goto finish;
+  //   }
+
+  //   {
+  //     const auto master_key_length = SSL_SESSION_get_master_key(session, nullptr, 0);
+  //     std::string master_key(master_key_length, ' ');
+  //     assert(SSL_SESSION_get_master_key(session, reinterpret_cast<unsigned char*>(master_key.data()), master_key_length) == master_key_length);
+  //     std::cout << "TLS master key (for practice purposes): " << master_key << std::endl;
+  //   }
+  // }
 
   BIO_puts(web, ("GET " + resource + " HTTP/1.1\r\n"
                  "Host: " + hostname + "\r\n"
