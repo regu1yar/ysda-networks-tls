@@ -167,21 +167,6 @@ int main(int argc, char** argv) {
     goto finish;
   }
 
-  // {
-  //   const SSL_SESSION* session = SSL_get_session(ssl);
-  //   if (!session) {
-  //     std::cerr << "Failed to retrieve ssl session" << std::endl;
-  //     goto finish;
-  //   }
-
-  //   {
-  //     const auto master_key_length = SSL_SESSION_get_master_key(session, nullptr, 0);
-  //     std::string master_key(master_key_length, ' ');
-  //     assert(SSL_SESSION_get_master_key(session, reinterpret_cast<unsigned char*>(master_key.data()), master_key_length) == master_key_length);
-  //     std::cout << "TLS master key (for practice purposes): " << master_key << std::endl;
-  //   }
-  // }
-
   BIO_puts(web, ("GET " + resource + " HTTP/1.1\r\n"
                  "Host: " + hostname + "\r\n"
                  "Connection: close\r\n\r\n").c_str());
